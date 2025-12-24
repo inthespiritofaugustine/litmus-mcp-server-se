@@ -10,7 +10,7 @@ from mcp.types import ErrorData, INTERNAL_ERROR
 from starlette.applications import Starlette
 from starlette.routing import Route, Mount
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import Response, JSONResponse
 
 from config import MCP_PORT
 from tools.devicehub_tools import (
@@ -749,6 +749,27 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
         ) from e
 
 
+# Tools endpoint handler - exposes all tool definitions as JSON
+async def handle_tools_endpoint(request: Request):
+    """Return all tool definitions as JSON for external applications."""
+    tools = get_tool_definitions()
+    tool_list = []
+    for tool in tools:
+        tool_dict = {
+            "name": tool.name,
+            "description": tool.description,
+            "input_schema": tool.inputSchema,
+        }
+        tool_list.append(tool_dict)
+
+    return JSONResponse({
+        "server": "LitmusMCPServer",
+        "version": "1.0.0",
+        "tool_count": len(tool_list),
+        "tools": tool_list,
+    })
+
+
 # SSE endpoint handler
 sse = SseServerTransport("/messages")
 
@@ -819,10 +840,11 @@ class ContextCapturingMiddleware:
 # Wrap the SSE POST handler with our context-capturing middleware
 wrapped_post_handler = ContextCapturingMiddleware(sse.handle_post_message)
 
-# Create Starlette app with both SSE and POST message routes
+# Create Starlette app with SSE, POST message, and tools routes
 app = Starlette(
     routes=[
         Route("/sse", endpoint=handle_sse, methods=["GET"]),
+        Route("/tools", endpoint=handle_tools_endpoint, methods=["GET"]),
         Mount("/messages", app=wrapped_post_handler),
     ]
 )
