@@ -3,7 +3,7 @@ name: Create and publish a Docker image for Litmus MCP Server
 
 on:
   push:
-    branches: ['main']
+    branches: ['**']
     tags:
       - "v*.*.*"
   pull_request:

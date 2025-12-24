@@ -9,6 +9,7 @@ from mcp.types import ErrorData, INVALID_PARAMS, INTERNAL_ERROR
 from mcp.types import TextContent
 from starlette.requests import Request
 from litmussdk.devicehub import devices, tags
+from litmussdk.devicehub.tags import Tag
 from litmussdk.devicehub.drivers import list_all_drivers
 
 
@@ -391,3 +392,359 @@ def _create_device_summary(device_data: list[dict]) -> dict:
     return {
         "by_driver": driver_counts,
     }
+
+
+async def list_all_devicehub_tags(
+    request: Request, arguments: dict
+) -> list[TextContent]:
+    """
+    Lists all tags across the entire Litmus Edge instance (up to 1000).
+
+    Optionally filter by device name.
+    """
+    try:
+        device_name_filter = arguments.get("device_name")
+
+        connection = get_litmus_connection(request)
+
+        # Get all tags
+        all_tags = tags.list_all_tags(le_connection=connection)
+
+        tag_data = []
+        device_counts = {}
+
+        for current_tag in all_tags:
+            # Extract device info
+            device_id = getattr(current_tag, "device", None)
+
+            # Apply device filter if specified
+            if device_name_filter:
+                # We need to check if this tag belongs to the specified device
+                # The device field may be an ID, so we need to handle this
+                tag_device_name = getattr(current_tag, "device_name", None)
+                if tag_device_name and tag_device_name != device_name_filter:
+                    continue
+
+            tag_info = {
+                "tag_name": current_tag.tag_name,
+                "id": getattr(current_tag, "id", None),
+                "device": device_id,
+                "value_type": getattr(current_tag, "value_type", None),
+                "description": getattr(current_tag, "description", None),
+                "publish_cov": getattr(current_tag, "publish_cov", None),
+            }
+            tag_data.append({k: v for k, v in tag_info.items() if v is not None})
+
+            # Count by device
+            device_key = device_id or "unknown"
+            device_counts[device_key] = device_counts.get(device_key, 0) + 1
+
+        tag_data.sort(key=lambda x: (x.get("device", ""), x.get("tag_name", "")))
+
+        logger.info(f"Retrieved {len(tag_data)} tags from Litmus Edge")
+
+        result = {
+            "count": len(tag_data),
+            "tags": tag_data,
+            "summary": {"by_device": device_counts},
+        }
+
+        if device_name_filter:
+            result["filters_applied"] = {"device_name": device_name_filter}
+
+        return format_success_response(result)
+
+    except McpError:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving all tags: {e}", exc_info=True)
+        return format_error_response("retrieval_failed", str(e), count=0, tags=[])
+
+
+async def create_devicehub_tag(
+    request: Request, arguments: dict
+) -> list[TextContent]:
+    """
+    Creates a new tag (data point/register) on a device.
+
+    Requires device name, tag name, and value type.
+    """
+    try:
+        device_name = arguments.get("device_name")
+        tag_name = arguments.get("tag_name")
+        value_type = arguments.get("value_type")
+        description = arguments.get("description", "")
+        properties = arguments.get("properties", [])
+        publish_cov = arguments.get("publish_cov", False)
+
+        # Validate required parameters
+        if not device_name:
+            raise McpError(
+                ErrorData(code=INVALID_PARAMS, message="'device_name' parameter is required")
+            )
+        if not tag_name:
+            raise McpError(
+                ErrorData(code=INVALID_PARAMS, message="'tag_name' parameter is required")
+            )
+        if not value_type:
+            raise McpError(
+                ErrorData(code=INVALID_PARAMS, message="'value_type' parameter is required")
+            )
+
+        connection = get_litmus_connection(request)
+
+        # Find the device
+        requested_device = _find_device_by_name(connection, device_name)
+        if not requested_device:
+            raise McpError(
+                ErrorData(
+                    code=INVALID_PARAMS,
+                    message=f"Device '{device_name}' not found. Use get_devicehub_devices to see available devices.",
+                )
+            )
+
+        # Create the tag object
+        new_tag = Tag(
+            device=requested_device.id,
+            tag_name=tag_name,
+            value_type=value_type,
+            description=description,
+            properties=properties,
+            publish_cov=publish_cov,
+        )
+
+        # Create the tag
+        created_tags = tags.create_tags([new_tag], le_connection=connection)
+
+        if created_tags and len(created_tags) > 0:
+            created_tag = created_tags[0]
+            tag_info = {
+                "tag_name": created_tag.tag_name,
+                "id": getattr(created_tag, "id", None),
+                "device": getattr(created_tag, "device", None),
+                "value_type": getattr(created_tag, "value_type", None),
+                "description": getattr(created_tag, "description", None),
+                "publish_cov": getattr(created_tag, "publish_cov", None),
+            }
+            tag_info = {k: v for k, v in tag_info.items() if v is not None}
+
+            logger.info(f"Created tag '{tag_name}' on device '{device_name}'")
+
+            result = {
+                "device_name": device_name,
+                "tag": tag_info,
+            }
+
+            return format_success_response(result)
+        else:
+            raise McpError(
+                ErrorData(
+                    code=INTERNAL_ERROR,
+                    message="Tag creation returned no results",
+                )
+            )
+
+    except McpError:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating tag: {e}", exc_info=True)
+        return format_error_response("creation_failed", str(e))
+
+
+async def update_devicehub_tag(
+    request: Request, arguments: dict
+) -> list[TextContent]:
+    """
+    Updates an existing tag's configuration.
+
+    Requires device_name and tag_id, plus fields to update.
+    """
+    try:
+        device_name = arguments.get("device_name")
+        tag_id = arguments.get("tag_id")
+        new_tag_name = arguments.get("tag_name")
+        new_value_type = arguments.get("value_type")
+        new_description = arguments.get("description")
+        new_properties = arguments.get("properties")
+        new_publish_cov = arguments.get("publish_cov")
+
+        # Validate required parameters
+        if not device_name:
+            raise McpError(
+                ErrorData(code=INVALID_PARAMS, message="'device_name' parameter is required")
+            )
+        if not tag_id:
+            raise McpError(
+                ErrorData(code=INVALID_PARAMS, message="'tag_id' parameter is required for updates")
+            )
+
+        connection = get_litmus_connection(request)
+
+        # Find the device
+        requested_device = _find_device_by_name(connection, device_name)
+        if not requested_device:
+            raise McpError(
+                ErrorData(
+                    code=INVALID_PARAMS,
+                    message=f"Device '{device_name}' not found. Use get_devicehub_devices to see available devices.",
+                )
+            )
+
+        # Find the existing tag
+        tag_list = tags.list_registers_from_single_device(requested_device)
+        existing_tag = next((tag for tag in tag_list if tag.id == tag_id), None)
+
+        if not existing_tag:
+            raise McpError(
+                ErrorData(
+                    code=INVALID_PARAMS,
+                    message=f"Tag with ID '{tag_id}' not found on device '{device_name}'",
+                )
+            )
+
+        # Update fields if provided
+        if new_tag_name is not None:
+            existing_tag.tag_name = new_tag_name
+        if new_value_type is not None:
+            existing_tag.value_type = new_value_type
+        if new_description is not None:
+            existing_tag.description = new_description
+        if new_properties is not None:
+            existing_tag.properties = new_properties
+        if new_publish_cov is not None:
+            existing_tag.publish_cov = new_publish_cov
+
+        # Update the tag
+        updated_tags = tags.update_tags([existing_tag], le_connection=connection)
+
+        if updated_tags and len(updated_tags) > 0:
+            updated_tag = updated_tags[0]
+            tag_info = {
+                "tag_name": updated_tag.tag_name,
+                "id": getattr(updated_tag, "id", None),
+                "device": getattr(updated_tag, "device", None),
+                "value_type": getattr(updated_tag, "value_type", None),
+                "description": getattr(updated_tag, "description", None),
+                "publish_cov": getattr(updated_tag, "publish_cov", None),
+            }
+            tag_info = {k: v for k, v in tag_info.items() if v is not None}
+
+            logger.info(f"Updated tag '{tag_id}' on device '{device_name}'")
+
+            result = {
+                "device_name": device_name,
+                "tag": tag_info,
+            }
+
+            return format_success_response(result)
+        else:
+            raise McpError(
+                ErrorData(
+                    code=INTERNAL_ERROR,
+                    message="Tag update returned no results",
+                )
+            )
+
+    except McpError:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating tag: {e}", exc_info=True)
+        return format_error_response("update_failed", str(e))
+
+
+async def delete_devicehub_tag(
+    request: Request, arguments: dict
+) -> list[TextContent]:
+    """
+    Deletes one or more tags from a device.
+
+    Provide tag_name, tag_id, or tag_ids (list) to specify which tags to delete.
+    """
+    try:
+        device_name = arguments.get("device_name")
+        tag_name = arguments.get("tag_name")
+        tag_id = arguments.get("tag_id")
+        tag_ids = arguments.get("tag_ids", [])
+
+        # Validate required parameters
+        if not device_name:
+            raise McpError(
+                ErrorData(code=INVALID_PARAMS, message="'device_name' parameter is required")
+            )
+
+        if not tag_name and not tag_id and not tag_ids:
+            raise McpError(
+                ErrorData(
+                    code=INVALID_PARAMS,
+                    message="Either 'tag_name', 'tag_id', or 'tag_ids' is required",
+                )
+            )
+
+        connection = get_litmus_connection(request)
+
+        # Find the device
+        requested_device = _find_device_by_name(connection, device_name)
+        if not requested_device:
+            raise McpError(
+                ErrorData(
+                    code=INVALID_PARAMS,
+                    message=f"Device '{device_name}' not found. Use get_devicehub_devices to see available devices.",
+                )
+            )
+
+        # Get all tags for the device
+        tag_list = tags.list_registers_from_single_device(requested_device)
+
+        # Find tags to delete
+        tags_to_delete = []
+        deleted_tag_names = []
+
+        if tag_ids:
+            # Batch delete by IDs
+            for tid in tag_ids:
+                found_tag = next((t for t in tag_list if t.id == tid), None)
+                if found_tag:
+                    tags_to_delete.append(found_tag)
+                    deleted_tag_names.append(found_tag.tag_name)
+        elif tag_id:
+            # Single delete by ID
+            found_tag = next((t for t in tag_list if t.id == tag_id), None)
+            if found_tag:
+                tags_to_delete.append(found_tag)
+                deleted_tag_names.append(found_tag.tag_name)
+        elif tag_name:
+            # Single delete by name
+            found_tag = next((t for t in tag_list if t.tag_name == tag_name), None)
+            if found_tag:
+                tags_to_delete.append(found_tag)
+                deleted_tag_names.append(found_tag.tag_name)
+
+        if not tags_to_delete:
+            raise McpError(
+                ErrorData(
+                    code=INVALID_PARAMS,
+                    message="No matching tags found to delete",
+                )
+            )
+
+        # Delete the tags
+        if len(tags_to_delete) == 1:
+            tags.delete_tag(tags_to_delete[0], le_connection=connection)
+        else:
+            tags.delete_tags(tags_to_delete, le_connection=connection)
+
+        logger.info(f"Deleted {len(tags_to_delete)} tag(s) from device '{device_name}'")
+
+        result = {
+            "device_name": device_name,
+            "deleted_count": len(tags_to_delete),
+            "deleted_tags": deleted_tag_names,
+        }
+
+        return format_success_response(result)
+
+    except McpError:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting tag(s): {e}", exc_info=True)
+        return format_error_response("deletion_failed", str(e))
