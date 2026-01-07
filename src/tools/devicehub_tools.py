@@ -366,10 +366,18 @@ def _find_device_by_name(connection: Any, device_name: str) -> Optional[Any]:
 
 def _build_device_info(device: Any) -> dict:
     """Build device information dictionary."""
+    # Extract driver name as a string, since the driver attribute may be a Driver object
+    driver_attr = getattr(device, "driver", None)
+    if driver_attr is not None:
+        # If it's a Driver object, get its name; otherwise use it directly
+        driver_name = getattr(driver_attr, "name", None) or str(driver_attr)
+    else:
+        driver_name = None
+
     device_info = {
         "name": device.name,
         "id": getattr(device, "id", None),
-        "driver": getattr(device, "driver", None),
+        "driver": driver_name,
         "metadata": getattr(device, "metadata", "unknown"),
         "description": getattr(device, "description", None),
         "properties": getattr(device, "properties", None),
