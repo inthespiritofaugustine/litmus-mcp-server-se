@@ -26,8 +26,11 @@ def _set_sdk_env_vars(edge_url: str, client_id: str, client_secret: str, validat
     os.environ["EDGE_API_CLIENT_SECRET"] = client_secret
     os.environ["VALIDATE_CERTIFICATE"] = str(validate_certificate).lower()
 
-    # Clear SDK caches so it picks up the new env vars
-    sdk_config._settings = sdk_config.Settings()
+    # Clear SDK caches and force new EnvSettings to be created
+    # The default EnvSettings() in Settings class is evaluated once at class definition,
+    # so we must explicitly provide a fresh one via _settings dict
+    sdk_config._settings["env_settings"] = sdk_config.EnvSettings()
+    sdk_config.get_settings.cache_clear()
     refresh_default_le_connection()
 
 
