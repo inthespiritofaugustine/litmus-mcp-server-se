@@ -11,6 +11,22 @@ from starlette.requests import Request
 from litmussdk.devicehub import devices, tags, record
 from litmussdk.devicehub.tags import Tag
 from litmussdk.devicehub.drivers import list_all_drivers
+from litmussdk.devicehub.record._utils import create_dh_cache, sync_dh_caches
+from litmussdk.system.general import get_version
+from litmussdk.utils.errors.devicehub import MissingRecordVersionError
+
+
+def _ensure_driver_cache(connection: Any) -> None:
+    """Ensure driver record cache exists for the connected Litmus Edge version."""
+    sync_dh_caches()
+    try:
+        record.load_dh_record(connection=connection)
+    except MissingRecordVersionError:
+        # Cache doesn't exist, download it
+        version = get_version(connection)
+        logger.info(f"Downloading driver record cache for version {version}")
+        create_dh_cache(version, connection)
+        logger.info(f"Driver record cache downloaded for version {version}")
 
 
 async def get_litmusedge_driver_list(request: Request) -> list[TextContent]:
@@ -66,8 +82,8 @@ async def get_devicehub_devices(request: Request, arguments: dict) -> list[TextC
         filter_by_driver = arguments.get("filter_by_driver")
 
         connection = get_litmus_connection(request)
-        # Pre-load driver record cache for SDK 2.0 compatibility
-        record.load_dh_record(connection=connection)
+        # Ensure driver record cache exists for SDK 2.0 compatibility
+        _ensure_driver_cache(connection)
         device_list = devices.list_devices(connection=connection)
         logger.info(f"Retrieved {len(device_list)} devices from Litmus Edge")
 
@@ -134,8 +150,8 @@ async def create_devicehub_device(
             )
 
         connection = get_litmus_connection(request)
-        # Pre-load driver record cache for SDK 2.0 compatibility
-        record.load_dh_record(connection=connection)
+        # Ensure driver record cache exists for SDK 2.0 compatibility
+        _ensure_driver_cache(connection)
 
         # Get driver information
         driver_list = list_all_drivers(connection=connection)
@@ -362,8 +378,8 @@ async def get_current_value_of_devicehub_tag(
 
 def _find_device_by_name(connection: Any, device_name: str) -> Optional[Any]:
     """Find a device by name from the device list."""
-    # Pre-load driver record cache for SDK 2.0 compatibility
-    record.load_dh_record(connection=connection)
+    # Ensure driver record cache exists for SDK 2.0 compatibility
+    _ensure_driver_cache(connection)
     device_list = devices.list_devices(connection=connection)
     for device in device_list:
         if device.name == device_name:
