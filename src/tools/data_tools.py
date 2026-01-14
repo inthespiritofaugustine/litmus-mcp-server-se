@@ -44,18 +44,21 @@ async def get_current_value_on_topic(
             nats_port = params["nats_port"]
             nats_user = params.get("nats_user")
             nats_password = params.get("nats_password")
+            use_tls = params.get("use_tls", False)
         except McpError:
             # Fall back to provided parameters or config defaults
             nats_source = nats_source or NATS_SOURCE
             nats_port = nats_port or NATS_PORT
             nats_user = None
             nats_password = None
+            use_tls = False
     else:
         # Use provided parameters or config defaults
         nats_source = nats_source or NATS_SOURCE
         nats_port = nats_port or NATS_PORT
         nats_user = None
         nats_password = None
+        use_tls = False
 
     stop_event = asyncio.Event()
     final_message = await _nc_single_topic(
@@ -65,6 +68,7 @@ async def get_current_value_on_topic(
         stop_event,
         nats_user=nats_user,
         nats_password=nats_password,
+        use_tls=use_tls,
     )
     return final_message
 
@@ -133,12 +137,14 @@ async def get_multiple_values_from_topic_tool(
             nats_port = params["nats_port"]
             nats_user = params.get("nats_user")
             nats_password = params.get("nats_password")
+            use_tls = params.get("use_tls", False)
         except McpError:
             # Fall back to provided parameters or config defaults
             nats_source = nats_source or NATS_SOURCE
             nats_port = nats_port or NATS_PORT
             nats_user = None
             nats_password = None
+            use_tls = False
 
         stop_event = asyncio.Event()
 
@@ -150,6 +156,7 @@ async def get_multiple_values_from_topic_tool(
             num_samples,
             nats_user=nats_user,
             nats_password=nats_password,
+            use_tls=use_tls,
         )
 
         logger.info(f"Collected {num_samples} samples from topic: {topic}")
@@ -170,16 +177,20 @@ async def get_multiple_values_from_topic_tool(
         return format_error_response("collection_failed", str(e))
 
 
-def _get_connect_options(nats_source, nats_port, nats_user, nats_password):
+def _get_connect_options(nats_source, nats_port, nats_user, nats_password, use_tls=False):
 
     connect_options = {"servers": [f"nats://{nats_source}:{nats_port}"]}
 
-    ssl_context = ssl_config()
-    connect_options["tls"] = ssl_context
+    # Only enable TLS if explicitly requested
+    if use_tls:
+        ssl_context = ssl_config()
+        connect_options["tls"] = ssl_context
 
     if nats_user and nats_password:
         connect_options["user"] = nats_user
         connect_options["password"] = nats_password
+
+    logger.debug(f"NATS connect options: server={nats_source}:{nats_port}, tls={use_tls}, user={nats_user is not None}")
 
     return connect_options
 
@@ -191,13 +202,14 @@ async def _nc_single_topic(
     stop_event: asyncio.Event,
     nats_user: Optional[str] = None,
     nats_password: Optional[str] = None,
+    use_tls: bool = False,
 ) -> dict:
     """
     Subscribe to a single topic and return a single message.
     """
 
     connect_options = _get_connect_options(
-        nats_source, nats_port, nats_user, nats_password
+        nats_source, nats_port, nats_user, nats_password, use_tls
     )
     nc = await nats.connect(**connect_options)
 
@@ -229,12 +241,13 @@ async def _collect_multiple_values_from_topic(
     num_samples: int = 10,
     nats_user: Optional[str] = None,
     nats_password: Optional[str] = None,
+    use_tls: bool = False,
 ) -> dict:
     """
     Collect multiple values from a topic for plotting or analysis.
     """
     connect_options = _get_connect_options(
-        nats_source, nats_port, nats_user, nats_password
+        nats_source, nats_port, nats_user, nats_password, use_tls
     )
     nc = await nats.connect(**connect_options)
 

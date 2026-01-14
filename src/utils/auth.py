@@ -132,7 +132,7 @@ def get_nats_connection_params(request: Optional[Request] = None) -> dict:
     nats_user = request.headers.get("NATS_USER")
     nats_password = request.headers.get("NATS_PASSWORD")
     nats_token = request.headers.get("NATS_TOKEN")
-    use_tls_str = request.headers.get("NATS_TLS", "true")
+    use_tls_str = request.headers.get("NATS_TLS", "false")
 
     # Validate required parameters
     if not nats_source:
