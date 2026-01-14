@@ -26,7 +26,8 @@ RUN uv venv && uv sync --frozen
 # Activate virtual environment
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Expose the MCP server port (default 8000)
+# Default MCP server port (configurable via MCP_PORT env var)
+ENV MCP_PORT=8000
 EXPOSE 8000
 
 # Make run script executable
