@@ -3,11 +3,25 @@ from starlette.requests import Request
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, INVALID_PARAMS, INTERNAL_ERROR
 import logging
+import os
 
 from litmussdk.utils.conn import new_le_connection
 from config import DEFAULT_TIMEOUT, NATS_PORT
 
 logger = logging.getLogger(__name__)
+
+
+def _set_sdk_env_vars(edge_url: str, client_id: str, client_secret: str, validate_certificate: bool) -> None:
+    """
+    Set environment variables for SDK 2.0 default connection.
+
+    SDK 2.0's Pydantic validators require a default connection via env vars,
+    even when we pass an explicit connection to SDK functions.
+    """
+    os.environ["EDGE_URL"] = edge_url
+    os.environ["EDGE_API_CLIENT_ID"] = client_id
+    os.environ["EDGE_API_CLIENT_SECRET"] = client_secret
+    os.environ["VALIDATE_CERTIFICATE"] = str(validate_certificate).lower()
 
 
 def get_litmus_connection(request: Request) -> Any:
@@ -33,6 +47,9 @@ def get_litmus_connection(request: Request) -> Any:
 
     # Validate required headers
     _validate_auth_headers(edge_url, client_id, client_secret)
+
+    # Set environment variables for SDK 2.0 default connection compatibility
+    _set_sdk_env_vars(edge_url, client_id, client_secret, validate_certificate)
 
     # Create connection
     try:
