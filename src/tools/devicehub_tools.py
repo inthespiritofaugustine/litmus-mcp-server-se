@@ -23,7 +23,7 @@ async def get_litmusedge_driver_list(request: Request) -> list[TextContent]:
     try:
 
         connection = get_litmus_connection(request)
-        driver_list = list_all_drivers(le_connection=connection)
+        driver_list = list_all_drivers(connection=connection)
 
         drivers = []
         for driver in driver_list:
@@ -66,7 +66,7 @@ async def get_devicehub_devices(request: Request, arguments: dict) -> list[TextC
         filter_by_driver = arguments.get("filter_by_driver")
 
         connection = get_litmus_connection(request)
-        device_list = devices.list_devices(le_connection=connection)
+        device_list = devices.list_devices(connection=connection)
         logger.info(f"Retrieved {len(device_list)} devices from Litmus Edge")
 
         device_data = []
@@ -134,7 +134,7 @@ async def create_devicehub_device(
         connection = get_litmus_connection(request)
 
         # Get driver information
-        driver_list = list_all_drivers(le_connection=connection)
+        driver_list = list_all_drivers(connection=connection)
         driver_map = {}
         driver_names = []
 
@@ -160,7 +160,7 @@ async def create_devicehub_device(
             driver=driver_map[selected_driver]["id"],
         )
 
-        created_device = devices.create_device(device, le_connection=connection)
+        created_device = devices.create_device(device, connection=connection)
 
         device_dict = (
             created_device.__dict__
@@ -358,7 +358,7 @@ async def get_current_value_of_devicehub_tag(
 
 def _find_device_by_name(connection: Any, device_name: str) -> Optional[Any]:
     """Find a device by name from the device list."""
-    device_list = devices.list_devices(le_connection=connection)
+    device_list = devices.list_devices(connection=connection)
     for device in device_list:
         if device.name == device_name:
             return device
@@ -416,7 +416,7 @@ async def list_all_devicehub_tags(
         connection = get_litmus_connection(request)
 
         # Get all tags
-        all_tags = tags.list_all_tags(le_connection=connection)
+        all_tags = tags.list_all_tags(connection=connection)
 
         tag_data = []
         device_counts = {}
@@ -522,7 +522,7 @@ async def create_devicehub_tag(
         )
 
         # Create the tag
-        created_tags = tags.create_tags([new_tag], le_connection=connection)
+        created_tags = tags.create_tags([new_tag], connection=connection)
 
         if created_tags and len(created_tags) > 0:
             created_tag = created_tags[0]
@@ -623,7 +623,7 @@ async def update_devicehub_tag(
             existing_tag.publish_cov = new_publish_cov
 
         # Update the tag
-        updated_tags = tags.update_tags([existing_tag], le_connection=connection)
+        updated_tags = tags.update_tags([existing_tag], connection=connection)
 
         if updated_tags and len(updated_tags) > 0:
             updated_tag = updated_tags[0]
@@ -737,9 +737,9 @@ async def delete_devicehub_tag(
 
         # Delete the tags
         if len(tags_to_delete) == 1:
-            tags.delete_tag(tags_to_delete[0], le_connection=connection)
+            tags.delete_tag(tags_to_delete[0], connection=connection)
         else:
-            tags.delete_tags(tags_to_delete, le_connection=connection)
+            tags.delete_tags(tags_to_delete, connection=connection)
 
         logger.info(f"Deleted {len(tags_to_delete)} tag(s) from device '{device_name}'")
 
