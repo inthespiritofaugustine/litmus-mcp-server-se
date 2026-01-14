@@ -8,7 +8,7 @@ from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, INVALID_PARAMS, INTERNAL_ERROR
 from mcp.types import TextContent
 from starlette.requests import Request
-from litmussdk.devicehub import devices, tags
+from litmussdk.devicehub import devices, tags, record
 from litmussdk.devicehub.tags import Tag
 from litmussdk.devicehub.drivers import list_all_drivers
 
@@ -66,6 +66,8 @@ async def get_devicehub_devices(request: Request, arguments: dict) -> list[TextC
         filter_by_driver = arguments.get("filter_by_driver")
 
         connection = get_litmus_connection(request)
+        # Pre-load driver record cache for SDK 2.0 compatibility
+        record.load_dh_record(connection=connection)
         device_list = devices.list_devices(connection=connection)
         logger.info(f"Retrieved {len(device_list)} devices from Litmus Edge")
 
@@ -132,6 +134,8 @@ async def create_devicehub_device(
             )
 
         connection = get_litmus_connection(request)
+        # Pre-load driver record cache for SDK 2.0 compatibility
+        record.load_dh_record(connection=connection)
 
         # Get driver information
         driver_list = list_all_drivers(connection=connection)
@@ -358,6 +362,8 @@ async def get_current_value_of_devicehub_tag(
 
 def _find_device_by_name(connection: Any, device_name: str) -> Optional[Any]:
     """Find a device by name from the device list."""
+    # Pre-load driver record cache for SDK 2.0 compatibility
+    record.load_dh_record(connection=connection)
     device_list = devices.list_devices(connection=connection)
     for device in device_list:
         if device.name == device_name:
