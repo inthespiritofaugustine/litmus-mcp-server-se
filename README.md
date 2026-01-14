@@ -32,6 +32,7 @@ The official [Litmus Automation](https://litmus.io) **Model Context Protocol (MC
 
 - [Getting Started](#getting-started)
   - [Quick Launch (Docker)](#quick-launch-docker)
+  - [Deploy on Litmus Edge](#deploy-on-litmus-edge)
   - [Cursor IDE Setup](#cursor-ide-setup)
 - [Tools](#available-tools)
 - [Usage](#usage)
@@ -54,6 +55,26 @@ Run the server in Docker:
 ```bash
 docker run -d --name litmus-mcp-server -p 8000:8000 ghcr.io/litmusautomation/litmus-mcp-server:latest
 ```
+
+### Deploy on Litmus Edge
+
+To run the MCP server directly on Litmus Edge:
+
+1. Navigate to **Applications → Containers**
+2. Enter the following run command:
+
+```bash
+docker run -d --name litmus-mcp-server --pull always -e MCP_PORT=9000 -p 9000:9000 ghcr.io/inthespiritofaugustine/litmus-mcp-server-se:main
+```
+
+3. Click **Run** to install and start the container
+
+**Configuration options:**
+- `MCP_PORT`: Set the server port (default: 8000)
+- `--pull always`: Ensures the latest image is pulled on each run
+- `-p 9000:9000`: Maps the external port to the container port (must match MCP_PORT)
+
+The MCP server will be available at `http://<LITMUSEDGE_IP>:9000/sse`.
 
 ### Cursor IDE Setup
 
@@ -145,8 +166,8 @@ To use `get_historical_data_from_influxdb`, you must allow InfluxDB port access:
 
 This server supports the [MCP SSE transport](https://modelcontextprotocol.io/docs/concepts/transports#server-sent-events-sse) for real-time communication.
 
-- **Client endpoint:** `http://<server-ip>:8000/sse`
-- **Default binding:** `0.0.0.0:8000/sse`
+- **Client endpoint:** `http://<server-ip>:<port>/sse`
+- **Default port:** `8000` (configurable via `MCP_PORT` environment variable)
 - **Communication:**
   - Server → Client: Streamed via SSE
   - Client → Server: HTTP POST
