@@ -10,7 +10,7 @@ from mcp.types import ErrorData, INTERNAL_ERROR
 from starlette.applications import Starlette
 from starlette.routing import Route, Mount
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import Response, JSONResponse
 
 from config import MCP_PORT
 from tools.devicehub_tools import (
@@ -19,6 +19,10 @@ from tools.devicehub_tools import (
     create_devicehub_device,
     get_devicehub_device_tags,
     get_current_value_of_devicehub_tag,
+    list_all_devicehub_tags,
+    create_devicehub_tag,
+    update_devicehub_tag,
+    delete_devicehub_tag,
 )
 from tools.dm_tools import (
     get_litmusedge_friendly_name,
@@ -157,6 +161,134 @@ def get_tool_definitions() -> list[Tool]:
                     "tag_id": {
                         "type": "string",
                         "description": "Unique ID of the tag (alternative if tag_name unknown)",
+                    },
+                },
+                "required": ["device_name"],
+            },
+        ),
+        Tool(
+            name="list_all_devicehub_tags",
+            description=(
+                "Lists all tags across the entire Litmus Edge instance (up to 1000). "
+                "Optionally filter by device name. Use this to get a global view of all configured tags."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "device_name": {
+                        "type": "string",
+                        "description": "Optional: Filter tags by device name",
+                    },
+                },
+                "required": [],
+            },
+        ),
+        Tool(
+            name="create_devicehub_tag",
+            description=(
+                "Creates a new tag (data point/register) on a device. "
+                "Requires device name, tag name, and value type. "
+                "Use get_devicehub_devices first to see available devices."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "device_name": {
+                        "type": "string",
+                        "description": "Device to add the tag to",
+                    },
+                    "tag_name": {
+                        "type": "string",
+                        "description": "Display name for the tag",
+                    },
+                    "value_type": {
+                        "type": "string",
+                        "description": "Data type (e.g., 'float', 'int16', 'bool')",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Optional: Tag description",
+                    },
+                    "properties": {
+                        "type": "object",
+                        "description": "Optional: Driver-specific properties (address, etc.)",
+                    },
+                    "publish_cov": {
+                        "type": "boolean",
+                        "description": "Optional: Publish only on change-of-value",
+                    },
+                },
+                "required": ["device_name", "tag_name", "value_type"],
+            },
+        ),
+        Tool(
+            name="update_devicehub_tag",
+            description=(
+                "Updates an existing tag's configuration. "
+                "Provide device_name and tag_id, plus fields to update. "
+                "Use get_devicehub_device_tags first to get the tag_id."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "device_name": {
+                        "type": "string",
+                        "description": "Device containing the tag",
+                    },
+                    "tag_id": {
+                        "type": "string",
+                        "description": "Tag ID (required for updates)",
+                    },
+                    "tag_name": {
+                        "type": "string",
+                        "description": "Optional: New display name",
+                    },
+                    "value_type": {
+                        "type": "string",
+                        "description": "Optional: New data type",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Optional: New description",
+                    },
+                    "properties": {
+                        "type": "object",
+                        "description": "Optional: Updated driver properties",
+                    },
+                    "publish_cov": {
+                        "type": "boolean",
+                        "description": "Optional: Update change-of-value setting",
+                    },
+                },
+                "required": ["device_name", "tag_id"],
+            },
+        ),
+        Tool(
+            name="delete_devicehub_tag",
+            description=(
+                "Deletes one or more tags from a device. "
+                "Provide tag_name, tag_id, or tag_ids (list) to specify which tags to delete. "
+                "Use get_devicehub_device_tags first to see available tags."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "device_name": {
+                        "type": "string",
+                        "description": "Device containing the tag(s)",
+                    },
+                    "tag_name": {
+                        "type": "string",
+                        "description": "Name of single tag to delete",
+                    },
+                    "tag_id": {
+                        "type": "string",
+                        "description": "ID of single tag to delete",
+                    },
+                    "tag_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of tag IDs to delete (batch delete)",
                     },
                 },
                 "required": ["device_name"],
@@ -539,6 +671,14 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             return await get_devicehub_device_tags(request, args)
         elif name == "get_current_value_of_devicehub_tag":
             return await get_current_value_of_devicehub_tag(request, args)
+        elif name == "list_all_devicehub_tags":
+            return await list_all_devicehub_tags(request, args)
+        elif name == "create_devicehub_tag":
+            return await create_devicehub_tag(request, args)
+        elif name == "update_devicehub_tag":
+            return await update_devicehub_tag(request, args)
+        elif name == "delete_devicehub_tag":
+            return await delete_devicehub_tag(request, args)
 
         # System tools
         elif name == "get_litmusedge_friendly_name":
@@ -607,6 +747,27 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 message=f"Tool execution failed: {str(e)}",
             )
         ) from e
+
+
+# Tools endpoint handler - exposes all tool definitions as JSON
+async def handle_tools_endpoint(request: Request):
+    """Return all tool definitions as JSON for external applications."""
+    tools = get_tool_definitions()
+    tool_list = []
+    for tool in tools:
+        tool_dict = {
+            "name": tool.name,
+            "description": tool.description,
+            "input_schema": tool.inputSchema,
+        }
+        tool_list.append(tool_dict)
+
+    return JSONResponse({
+        "server": "LitmusMCPServer",
+        "version": "1.0.0",
+        "tool_count": len(tool_list),
+        "tools": tool_list,
+    })
 
 
 # SSE endpoint handler
@@ -679,10 +840,11 @@ class ContextCapturingMiddleware:
 # Wrap the SSE POST handler with our context-capturing middleware
 wrapped_post_handler = ContextCapturingMiddleware(sse.handle_post_message)
 
-# Create Starlette app with both SSE and POST message routes
+# Create Starlette app with SSE, POST message, and tools routes
 app = Starlette(
     routes=[
         Route("/sse", endpoint=handle_sse, methods=["GET"]),
+        Route("/tools", endpoint=handle_tools_endpoint, methods=["GET"]),
         Mount("/messages", app=wrapped_post_handler),
     ]
 )
