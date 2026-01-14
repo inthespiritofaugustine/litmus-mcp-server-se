@@ -6,6 +6,8 @@ import logging
 import os
 
 from litmussdk.utils.conn import new_le_connection
+from litmussdk.utils.conn._connection import refresh_default_le_connection
+from litmussdk import config as sdk_config
 from config import DEFAULT_TIMEOUT, NATS_PORT
 
 logger = logging.getLogger(__name__)
@@ -17,11 +19,16 @@ def _set_sdk_env_vars(edge_url: str, client_id: str, client_secret: str, validat
 
     SDK 2.0's Pydantic validators require a default connection via env vars,
     even when we pass an explicit connection to SDK functions.
+    The SDK caches settings at import time, so we must refresh the cache.
     """
     os.environ["EDGE_URL"] = edge_url
     os.environ["EDGE_API_CLIENT_ID"] = client_id
     os.environ["EDGE_API_CLIENT_SECRET"] = client_secret
     os.environ["VALIDATE_CERTIFICATE"] = str(validate_certificate).lower()
+
+    # Clear SDK caches so it picks up the new env vars
+    sdk_config._settings = sdk_config.Settings()
+    refresh_default_le_connection()
 
 
 def get_litmus_connection(request: Request) -> Any:
