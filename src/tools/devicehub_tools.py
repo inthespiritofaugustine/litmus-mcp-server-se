@@ -328,10 +328,29 @@ async def get_current_value_of_devicehub_tag(
             identifier = f"ID '{tag_id}'"
 
         if not requested_tag:
+            # Build diagnostic info to help identify naming mismatches
+            available_tags = [t.tag_name for t in tag_list]
+
+            # Check for partial matches (case-insensitive, contains)
+            search_term = (tag_name or "").lower()
+            partial_matches = [
+                t.tag_name for t in tag_list
+                if search_term and (search_term in t.tag_name.lower() or t.tag_name.lower() in search_term)
+            ]
+
+            error_msg = f"Tag with {identifier} not found on device '{device_name}'."
+
+            if partial_matches:
+                error_msg += f" Possible matches: {partial_matches[:5]}"
+            else:
+                # Show a sample of available tags
+                sample = available_tags[:10]
+                error_msg += f" Available tags (first 10 of {len(available_tags)}): {sample}"
+
             raise McpError(
                 ErrorData(
                     code=INVALID_PARAMS,
-                    message=f"Tag with {identifier} not found on device '{device_name}'",
+                    message=error_msg,
                 )
             )
 
