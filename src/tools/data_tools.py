@@ -185,9 +185,8 @@ async def get_multiple_values_from_topic_tool(
 
 
 def _get_connect_options(nats_source, nats_port, nats_user, nats_password, nats_token=None, use_tls=False):
-    # Use tls:// scheme when TLS is enabled, nats:// otherwise
-    scheme = "tls" if use_tls else "nats"
-    connect_options = {"servers": [f"{scheme}://{nats_source}:{nats_port}"]}
+    # Always use nats:// scheme - TLS is handled via the tls parameter
+    connect_options = {"servers": [f"nats://{nats_source}:{nats_port}"]}
 
     # Always provide SSL context when TLS is enabled
     if use_tls:
@@ -209,7 +208,7 @@ def _get_connect_options(nats_source, nats_port, nats_user, nats_password, nats_
     connect_options["connect_timeout"] = 10
     connect_options["max_reconnect_attempts"] = 3
 
-    logger.info(f"NATS connect options: server={scheme}://{nats_source}:{nats_port}, tls={use_tls}")
+    logger.info(f"NATS connect options: server=nats://{nats_source}:{nats_port}, tls={use_tls}")
 
     return connect_options
 
@@ -232,12 +231,25 @@ async def _nc_single_topic(
         nats_source, nats_port, nats_user, nats_password, nats_token, use_tls
     )
 
+    async def error_cb(e):
+        logger.error(f"NATS error callback: {type(e).__name__}: {e}")
+
+    async def disconnected_cb():
+        logger.warning("NATS disconnected")
+
+    async def closed_cb():
+        logger.warning("NATS connection closed")
+
+    connect_options["error_cb"] = error_cb
+    connect_options["disconnected_cb"] = disconnected_cb
+    connect_options["closed_cb"] = closed_cb
+
     try:
         logger.info(f"Attempting NATS connection to {connect_options['servers']}")
         nc = await nats.connect(**connect_options)
-        logger.info("NATS connection established successfully")
+        logger.info(f"NATS connection established successfully, client_id={nc.client_id}")
     except Exception as e:
-        logger.error(f"Failed to connect to NATS: {e}", exc_info=True)
+        logger.error(f"Failed to connect to NATS: {type(e).__name__}: {e}", exc_info=True)
         raise
 
     result_message = {}
