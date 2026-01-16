@@ -132,8 +132,9 @@ def get_nats_connection_params(request: Optional[Request] = None) -> dict:
     nats_user = request.headers.get("NATS_USER")
     nats_password = request.headers.get("NATS_PASSWORD")
     nats_token = request.headers.get("NATS_TOKEN")
-    # Default to TLS disabled - can be enabled via NATS_TLS header if needed
-    use_tls_str = request.headers.get("NATS_TLS", "false")
+    # Default to TLS enabled - Litmus Edge NATS requires TLS with self-signed certs
+    # Our ssl_config() disables cert verification to handle self-signed certs
+    use_tls_str = request.headers.get("NATS_TLS", "true")
 
     # Validate required parameters
     if not nats_source:
