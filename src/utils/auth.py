@@ -171,8 +171,11 @@ def get_nats_connection_params(request: Optional[Request] = None) -> dict:
         "use_tls": use_tls,
     }
 
-    logger.debug(
-        f"NATS connection params: source={nats_source}, port={nats_port}, use_tls={use_tls}"
+    # Debug logging to verify received credentials
+    logger.info(
+        f"NATS config received: {nats_source}:{nats_port} "
+        f"user={nats_user} has_password={bool(nats_password)} "
+        f"has_token={bool(nats_token)} use_tls={use_tls}"
     )
 
     return params
