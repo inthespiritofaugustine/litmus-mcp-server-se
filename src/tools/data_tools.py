@@ -178,10 +178,11 @@ async def get_multiple_values_from_topic_tool(
 
 
 def _get_connect_options(nats_source, nats_port, nats_user, nats_password, use_tls=False):
+    # Use tls:// scheme when TLS is enabled, nats:// otherwise
+    scheme = "tls" if use_tls else "nats"
+    connect_options = {"servers": [f"{scheme}://{nats_source}:{nats_port}"]}
 
-    connect_options = {"servers": [f"nats://{nats_source}:{nats_port}"]}
-
-    # Only enable TLS if explicitly requested
+    # Always provide SSL context when TLS is enabled
     if use_tls:
         ssl_context = ssl_config()
         connect_options["tls"] = ssl_context
@@ -190,7 +191,11 @@ def _get_connect_options(nats_source, nats_port, nats_user, nats_password, use_t
         connect_options["user"] = nats_user
         connect_options["password"] = nats_password
 
-    logger.debug(f"NATS connect options: server={nats_source}:{nats_port}, tls={use_tls}, user={nats_user is not None}")
+    # Add connection timeout and error handling options
+    connect_options["connect_timeout"] = 10
+    connect_options["max_reconnect_attempts"] = 3
+
+    logger.info(f"NATS connect options: server={scheme}://{nats_source}:{nats_port}, tls={use_tls}, user={nats_user is not None}")
 
     return connect_options
 
@@ -211,7 +216,14 @@ async def _nc_single_topic(
     connect_options = _get_connect_options(
         nats_source, nats_port, nats_user, nats_password, use_tls
     )
-    nc = await nats.connect(**connect_options)
+
+    try:
+        logger.info(f"Attempting NATS connection to {connect_options['servers']}")
+        nc = await nats.connect(**connect_options)
+        logger.info("NATS connection established successfully")
+    except Exception as e:
+        logger.error(f"Failed to connect to NATS: {e}", exc_info=True)
+        raise
 
     result_message = {}
 
